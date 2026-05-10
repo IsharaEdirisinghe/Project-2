@@ -4,10 +4,17 @@ import mongoose from 'mongoose';
 import productRouter from './routes/productRouter.js';
 import userRouter from './routes/userRouter.js';
 import jwt from "jsonwebtoken";
+import orderRouter from './routes/orderRouter.js';
+import cors from 'cors';
+import dotenv from 'dotenv'
+
+dotenv.config();
 
 const app = express();
 
+app.use(cors())
 app.use(bodyParser.json())
+
 
 app.use(
     (req,res,next)=>{
@@ -38,16 +45,20 @@ app.use(
     }
 )
 
-mongoose.connect("mongodb+srv://admin:1234@cluster0.v3gjzcz.mongodb.net/?appName=Cluster0")
+mongoose.connect(
+ process.env.MONGODB_URL
+)
 .then(()=>{
     console.log("Connected to the database")
-}).catch(()=>{
-    console.log("Database connection failed")
+})
+.catch((err)=>{
+    console.log(err)
 })
 
-app.use("/products",productRouter)
-app.use("/users",userRouter)
 
+app.use("/api/products",productRouter)
+app.use("/api/users",userRouter)
+app.use("/api/orders",orderRouter)
 
 app.listen(3000, () => {
     console.log('Server is running on port 3000');
