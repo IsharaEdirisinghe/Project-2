@@ -1,4 +1,7 @@
+import { json } from "express"
 import Order from "../models/order.js"
+import Product from "../models/product.js"
+import { isAdmin } from "./userController.js"
 
 export async function createOrder(req, res) {
     //get user information
@@ -32,32 +35,120 @@ export async function createOrder(req, res) {
 
     try {
 
+        let total = 0;
+        let labelledTotal = 0;
+        const products = []
+
+        for(let i=0; i<orderInfo.products.length; i++){
+
+            const item = await Product.findOne({productId : orderInfo.products[i].productId})
+            if(item == null){
+                res.status(404).json({
+                    message : "Product with productId" + orderInfo.products[i].productId + "not found"
+                    
+                })
+                return
+            }
+            if(item.isAvailable == false){
+                res.status(404).json({
+                    message : "Product with productId" + orderInfo.products[i].productId + "is not available right now"
+                    
+                })
+                return
+            }
+            products[i] ={
+                productInfo : {
+                    productId : item.productId,
+                    name : item.name,
+                    altNames : item.altNames,
+                    description : item.description,
+                    images : item.images,
+                    labelledPrice : item.labelledPrice,
+                    price : item.price
+                },
+                quantity : orderInfo.products[i].qty
+            }
+            total += (item.price * orderInfo.products[i].qty)
+            labelledTotal += (item.labelledPrice * orderInfo.products[i].qty)
+        }
+
         const order = new Order({
-            orderId: orderId,
-            email: req.user.email,
-            name: orderInfo.name,
-            address: orderInfo.address,
-            total: 0,
-            phone: orderInfo.phone,
-            products: []
+            orderId : orderId,
+            email : req.user.email,
+            name : orderInfo.name,
+            address : orderInfo.address,
+            total : 0,
+            phone : orderInfo.phone,
+            products : products,
+            labelledTotal : labelledTotal,
+            total : total
         })
         const createOrder = await order.save()
         res.json({
-            message: "Order created successfully",
-            order: createOrder
+            message : "Order created successfully",
+            order : createdOrder
         })
-    } catch (err) {
+    }catch(err){
         res.status(500).json({
-            message: "Failed to create order",
-            error: err
-        })
+            message : "Failed to create order",
+            error : err
+        });
+    }
+}
+
+export async function getOrders(req, res){
+    if(req.user == null){
+        res.status(403).json({
+            message: "Please login and try again",
+        });
+        return;
     }
 
+    try{
+        if(req.user.role == "admin"){
+            const orders = await order.find();
+            res.json(orders);
+        }else{
+            const orders = await order.find({email:req.user.email});
+            res,json(orders);
+        }
+    }catch(err){
+        res.status(500).json({
+            message: "Failed to fetch orders",
+            error: err,
+        });
+    }
+}
 
+export async function updateOrderStatus(req,res){
+    if(!isAdmin(req)){
+        res.status(403).json({
+            message : "You are not authorized to update order status",
+        });
+        return;
+    }
+    try{
+        const orderId = req.params.orderId;
+        const status = req.params.status;
 
+        await Order.updateOne(
+            {
+                orderId: orderId
+            },
+            {
+                status : status
+            }
+        )
 
-    //add current users name if not provided
-    //orderId generate
-    //create order object
-
+        res.json({
+            message: "Order status update successfully",
+        });
+        
+    }catch(e){
+        res.status(500).json({
+            message: "Failed to update order status",
+            error:e,
+        });
+        return;
+    }
 }
