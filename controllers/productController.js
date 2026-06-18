@@ -132,3 +132,22 @@ export async function getProductById(req,res){
         })
     }
 }
+
+export async function searchProducts(req,res) {
+    const searchQuery = req.params.query
+    try{
+        const products = await Product.find({
+            $or:[
+                {name: {$regex : searchQuery, $options : "i"}},
+                {altNames : {$eleMatch : {$regex : searchQuery, $options : "i"}}}
+            ],
+            isAvailable : true
+        })
+        res.json(products)
+    }catch(err){
+        res.status(500).json({
+            message : "Internal server error",
+            error : err
+        })
+    }
+}
