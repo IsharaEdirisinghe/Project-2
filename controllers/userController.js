@@ -5,69 +5,152 @@ import dotenv from 'dotenv';
 import axios from "axios";
 import nodemailer from "nodemailer";
 import Product from "../models/product.js";
+import OTP from "../models/otp.js";
 
 dotenv.config();
 
-export function createUser(req, res) {
-    if (req.body.role == "admin") {
-        if (req.user == null) {
-            return res.status(403).json({
-                message: "Please login first"
-            })
-        }
-        if (req.user.role != "admin") {
-            return res.status(403).json({
-                message: "Not authorized"
-            })
-        }
-    }
+export async function createUser(req, res) {
+    try {
 
-    const hashedPassword = bcrypt.hashSync(req.body.password, 10);
+        const {
+            firstName,
+            lastName,
+            email,
+            password
+        } = req.body;
 
-    const user = new User({
-        firstName: req.body.firstName,
-        lastName: req.body.lastName,
-        email: req.body.email,
-        password: hashedPassword,
-        role: req.body.role,
-    })
-
-    user
-        .save()
-        .then(() => {
-            res.json({
-                message: "User added succefully"
+        // Required fields
+        if (!firstName || !lastName || !email || !password) {
+            return res.status(400).json({
+                message: "All fields are required"
             });
-        })
-        // .catch(()=>{
-        //     res.json({
-        //         message: "Failed to add user"
-        //     });
-        // })
-        .catch((error) => {
-            console.error(error);
-            res.status(500).json({
-                message: "Failed to add user",
-                error: error.message
+        }
+
+        // Check if email already exists
+        const existingUser = await User.findOne({ email });
+
+        if (existingUser) {
+            return res.status(400).json({
+                message: "Email already registered"
             });
+        }
+
+        // Hash password
+        const hashedPassword = bcrypt.hashSync(password, 10);
+
+        // Public signup can ONLY create customer
+        const user = new User({
+            firstName,
+            lastName,
+            email,
+            password: hashedPassword,
+            role: "customer"
         });
 
+        await user.save();
+
+        res.status(201).json({
+            message: "User registered successfully"
+        });
+
+    } catch (error) {
+
+        console.error("Create user error:", error);
+
+        res.status(500).json({
+            message: "Failed to create user",
+            error: error.message
+        });
+    }
+}
+
+export async function createAdminUser(req, res) {
+    try {
+
+        const {
+            firstName,
+            lastName,
+            email,
+            password
+        } = req.body;
+
+        // Required fields
+        if (!firstName || !lastName || !email || !password) {
+            return res.status(400).json({
+                message: "All fields are required"
+            });
+        }
+
+        // Check existing user
+        const existingUser = await User.findOne({ email });
+
+        if (existingUser) {
+            return res.status(400).json({
+                message: "Email already registered"
+            });
+        }
+
+        // Hash password
+        const hashedPassword = bcrypt.hashSync(password, 10);
+
+        // Create admin
+        const user = new User({
+            firstName,
+            lastName,
+            email,
+            password: hashedPassword,
+            role: "admin"
+        });
+
+        await user.save();
+
+        res.status(201).json({
+            message: "Admin created successfully"
+        });
+
+    } catch (error) {
+
+        console.error("Create admin error:", error);
+
+        res.status(500).json({
+            message: "Failed to create admin",
+            error: error.message
+        });
+    }
 }
 
 export function loginUser(req, res) {
-    const email = req.body.email
-    const password = req.body.password
+    const email = req.body.email;
+    const password = req.body.password;
+
+    console.log("LOGIN EMAIL:", email);
 
     User.findOne({ email: email }).then(
         (user) => {
+
+            console.log("USER FOUND:", user != null);
+
             if (user == null) {
-                res.status(404).json({
+                return res.status(404).json({
                     message: "User not found"
-                })
-            } else {
-                const isPasswordCorrect = bcrypt.compareSync(password, user.password)
-                if (isPasswordCorrect) {
-                    const token = jwt.sign({
+                });
+            }
+
+            console.log("USER ROLE:", user.role);
+
+            const isPasswordCorrect = bcrypt.compareSync(
+                password,
+                user.password
+            );
+
+            console.log("PASSWORD CORRECT:", isPasswordCorrect);
+
+            if (isPasswordCorrect) {
+
+                console.log("PASSWORD VERIFIED");
+
+                const token = jwt.sign(
+                    {
                         _id: user._id,
                         email: user.email,
                         firstName: user.firstName,
@@ -75,23 +158,32 @@ export function loginUser(req, res) {
                         role: user.role,
                         img: user.img
                     },
-                        process.env.JWT_KEY
-                    )
+                    process.env.JWT_KEY
+                );
 
+                console.log("TOKEN CREATED");
+                console.log("SENDING LOGIN RESPONSE");
 
-                    res.json({
-                        message: "Login successful",
-                        token: token,
-                        role: user.role
-                    })
-                } else {
-                    res.status(401).json({
-                        message: "Invalid password"
-                    })
-                }
+                return res.json({
+                    message: "Login successful",
+                    token: token,
+                    role: user.role
+                });
+            } else {
+
+                return res.status(401).json({
+                    message: "Invalid password"
+                });
             }
         }
-    )
+    ).catch((error) => {
+
+        console.log("LOGIN DATABASE ERROR:", error);
+
+        return res.status(500).json({
+            message: "Login failed"
+        });
+    });
 }
 
 export async function loginWithGoogle(req, res) {
@@ -157,126 +249,226 @@ export async function loginWithGoogle(req, res) {
 }
 
 const transport = nodemailer.createTransport({
-    service: 'gmail',
-    host: 'smtp.gmail.com',
+    service: "gmail",
+    host: "smtp.gmail.com",
     port: 587,
     secure: false,
     auth: {
-        user: "isharaedirisinghe800@gmail.com",
-        pass: "lxpcujhmkbyceday"
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 })
 
 export async function sendOTP(req, res) {
-    const randomOTP = Math.floor(100000 + Math.random() * 900000);
-    const email = req.body.email;
-    if (email == null) {
-        res.status(400).json({
-            message: "Email is required"
-        });
-        return;
-    }
+    console.log("SEND OTP ROUTE HIT");
+    console.log("OTP EMAIL:", req.body.email);
+    try {
 
-    const user = await User.findOne({
-        email: email
-    })
+        const { email } = req.body;
 
-    if (user == null) {
-        res.status(404).json({
-            message: "User not found"
-        })
-    }
-
-    await OTP.deleteMany({
-        email: email
-    })
-
-    const message = {
-        from: "isharaedirisinghe800@gmail.com",
-        to: email,
-        subject: "Resetting password for crystal beauty clear",
-        text: "This your password reset OTP : " + randomOTP
-    }
-
-    const otp = new OTP({
-        email: email,
-        otp: randomOTP
-    })
-    await otp.save()
-
-    transport.sendMail(message, (error, info) => {
-        if (error) {
-            res.status(500).json({
-                message: "Failed to send OTP",
-                error: error
-            });
-        } else {
-            res.json({
-                message: "OTP sent successfully",
-                otp: randomOTP
+        if (!email) {
+            return res.status(400).json({
+                message: "Email is required"
             });
         }
-    })
+
+        const user = await User.findOne({
+            email: email
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        // Generate 6-digit OTP
+        const randomOTP = Math.floor(
+            100000 + Math.random() * 900000
+        );
+
+        // Remove previous OTPs
+        await OTP.deleteMany({
+            email: email
+        });
+
+        // Save new OTP
+        const otp = new OTP({
+            email: email,
+            otp: randomOTP
+        });
+
+        await otp.save();
+
+        const message = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: "Resetting password for Velora",
+            text: "Your password reset OTP is: " + randomOTP
+        };
+
+        transport.sendMail(message, (error, info) => {
+
+            if (error) {
+                console.error("OTP email error:", error);
+
+                return res.status(500).json({
+                    message: "Failed to send OTP"
+                });
+            }
+
+            return res.status(200).json({
+                message: "OTP sent successfully"
+            });
+        });
+
+    } catch (error) {
+
+        console.error("Send OTP error:", error);
+
+        return res.status(500).json({
+            message: "Failed to send OTP",
+            error: error.message
+        });
+    }
 }
 
 export async function changePassword(req, res) {
-
     try {
 
         const user = await User.findOne({
-
             email: req.user.email
+        });
 
-        })
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        const {
+            currentPassword,
+            newPassword
+        } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({
+                message: "Current password and new password are required"
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                message: "New password must be at least 6 characters"
+            });
+        }
 
         const isCorrect = bcrypt.compareSync(
-
-            req.body.currentPassword,
-
+            currentPassword,
             user.password
-
-        )
+        );
 
         if (!isCorrect) {
-
             return res.status(400).json({
-
                 message: "Current password is incorrect"
-
-            })
-
+            });
         }
 
         const hashedPassword = bcrypt.hashSync(
-
-            req.body.newPassword,
-
+            newPassword,
             10
+        );
 
-        )
+        user.password = hashedPassword;
 
-        user.password = hashedPassword
-
-        await user.save()
+        await user.save();
 
         res.json({
+            message: "Password changed successfully"
+        });
 
-            message: "Password Changed Successfully"
+    } catch (err) {
 
-        })
-
-    }
-
-    catch (err) {
+        console.error("Change password error:", err);
 
         res.status(500).json({
-
-            message: err.message
-
-        })
-
+            message: "Failed to change password",
+            error: err.message
+        });
     }
+}
 
+export async function resetPassword(req, res) {
+    try {
+
+        const {
+            email,
+            otp,
+            newPassword
+        } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({
+                message: "Email, OTP and new password are required"
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                message: "New password must be at least 6 characters"
+            });
+        }
+
+        const user = await User.findOne({
+            email: email
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        // Find OTP
+        const otpRecord = await OTP.findOne({
+            email: email,
+            otp: Number(otp)
+        });
+
+        if (!otpRecord) {
+            return res.status(400).json({
+                message: "Invalid or expired OTP"
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = bcrypt.hashSync(
+            newPassword,
+            10
+        );
+
+        user.password = hashedPassword;
+
+        await user.save();
+
+        // Delete OTP after successful password reset
+        await OTP.deleteMany({
+            email: email
+        });
+
+        res.json({
+            message: "Password reset successfully"
+        });
+
+    } catch (error) {
+
+        console.error("Reset password error:", error);
+
+        res.status(500).json({
+            message: "Failed to reset password",
+            error: error.message
+        });
+    }
 }
 
 export async function getProfile(req, res) {
@@ -807,23 +999,19 @@ export async function updateCartQuantity(req, res) {
                 message: "Size and color are required"
             });
         }
-
         if (newQuantity < 1) {
             return res.status(400).json({
                 message: "Quantity must be at least 1"
             });
         }
-
         const user = await User.findOne({
             email: req.user.email
         });
-
         if (!user) {
             return res.status(404).json({
                 message: "User not found"
             });
         }
-
         const product = await Product.findById(productId);
 
         if (!product) {
@@ -831,38 +1019,32 @@ export async function updateCartQuantity(req, res) {
                 message: "Product not found"
             });
         }
-
         const variant = product.variants.find(
             v =>
                 v.size === size &&
                 v.color === color
         );
-
         if (!variant) {
             return res.status(400).json({
                 message: "Selected variant is not available"
             });
         }
-
         if (newQuantity > variant.stock) {
             return res.status(400).json({
                 message: `Only ${variant.stock} items available`
             });
         }
-
         const cartItem = user.cart.find(
             item =>
                 item.product.toString() === productId &&
                 item.size === size &&
                 item.color === color
         );
-
         if (!cartItem) {
             return res.status(404).json({
                 message: "Product variant not found in cart"
             });
         }
-
         cartItem.quantity = newQuantity;
 
         await user.save();
@@ -875,7 +1057,6 @@ export async function updateCartQuantity(req, res) {
             message: "Cart updated",
             cart: updatedUser.cart
         });
-
     } catch (error) {
         console.error("Update cart error:", error);
 
@@ -884,7 +1065,6 @@ export async function updateCartQuantity(req, res) {
         });
     }
 }
-
 
 // Remove product from cart
 export async function removeFromCart(req, res) {

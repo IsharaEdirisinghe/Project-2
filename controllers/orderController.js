@@ -1,7 +1,6 @@
 import { json } from "express"
 import Order from "../models/order.js"
 import Product from "../models/product.js"
-import { isAdmin } from "./userController.js"
 import User from "../models/user.js";
 
 const DELIVERY_FEE = 300;
@@ -210,23 +209,53 @@ export async function createOrder(req, res) {
         );
 
         // Reduce variant stock
+        // Reduce variant stock
+        // Reduce variant stock safely
         for (let i = 0; i < orderInfo.products.length; i++) {
 
             const orderProduct = orderInfo.products[i];
 
-            const product = await Product.findOne({
-                productId: orderProduct.productId
-            });
+            const quantity = Number(orderProduct.qty);
 
-            const variant = product.variants.find(
-                (v) =>
-                    v.size === orderProduct.size &&
-                    v.color === orderProduct.color
+            const result = await Product.updateOne(
+                {
+                    productId: orderProduct.productId,
+                    variants: {
+                        $elemMatch: {
+                            size: orderProduct.size,
+                            color: orderProduct.color,
+                            stock: { $gte: quantity }
+                        }
+                    }
+                },
+                {
+                    $inc: {
+                        "variants.$[variant].stock": -quantity
+                    }
+                },
+                {
+                    arrayFilters: [
+                        {
+                            "variant.size": orderProduct.size,
+                            "variant.color": orderProduct.color
+                        }
+                    ]
+                }
             );
 
-            variant.stock -= Number(orderProduct.qty);
+            if (result.modifiedCount === 0) {
 
-            await product.save();
+                return res.status(400).json({
+                    message:
+                        "Stock is no longer available for " +
+                        orderProduct.productId +
+                        " (" +
+                        orderProduct.size +
+                        ", " +
+                        orderProduct.color +
+                        ")"
+                });
+            }
         }
 
         res.status(201).json({
@@ -246,26 +275,17 @@ export async function createOrder(req, res) {
 }
 
 export async function getOrders(req, res) {
-    if (req.user == null) {
-        res.status(403).json({
-            message: "Please login and try again",
-        });
-        return;
-    }
-
     try {
-        if (req.user.role == "admin") {
-            const orders = await Order.find();
-            res.json(orders);
-        } else {
-            const orders = await Order.find({ email: req.user.email });
-            res.json(orders);
-        }
+        const orders = await Order.find().sort({ date: -1 });
+
+        res.json(orders);
+
     } catch (err) {
         console.log(err);
+
         res.status(500).json({
             message: "Failed to fetch orders",
-            error: err,
+            error: err.message
         });
     }
 }
@@ -273,15 +293,6 @@ export async function getOrders(req, res) {
 export async function updateOrderStatus(req, res) {
 
     try {
-
-        if (!isAdmin(req)) {
-
-            return res.status(403).json({
-                message: "Unauthorized"
-            });
-
-        }
-
         const { orderId } = req.params;
         const { status } = req.body;
 
@@ -371,33 +382,20 @@ export async function updateOrderStatus(req, res) {
 }
 
 export async function getOrderHistory(req, res) {
-
     try {
-
         const orders = await Order.find({
-
             email: req.user.email
-
         }).sort({
-
             date: -1
-
         });
 
         res.json(orders);
 
-    }
-
-    catch (err) {
-
+    } catch (err) {
         res.status(500).json({
-
             message: err.message
-
         });
-
     }
-
 }
 
 
@@ -409,9 +407,8 @@ export async function confirmOrder(req, res) {
         const { orderId } = req.params;
 
         const order = await Order.findOne({
-
-            orderId
-
+            orderId,
+            email: req.user.email
         });
 
         if (!order) {

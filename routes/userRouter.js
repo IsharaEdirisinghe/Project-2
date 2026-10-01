@@ -1,9 +1,11 @@
 import express from "express";
 import {
     createUser,
+    createAdminUser,
     loginUser,
     loginWithGoogle,
     changePassword,
+    resetPassword,
     sendOTP,
     getProfile,
     updateProfile,
@@ -21,14 +23,30 @@ import {
     clearInvalidCartItems
 } from "../controllers/userController.js";
 import verifyToken from "../middlewares/verifyToken.js";
+import isAdmin from "../middlewares/isAdmin.js";
+
 
 const userRouter = express.Router();
 
 userRouter.post("/", createUser)
+userRouter.post(
+    "/admin",
+    verifyToken,
+    isAdmin,
+    createAdminUser
+)
 userRouter.post("/login", loginUser)
 userRouter.post("/login/google", loginWithGoogle)
 userRouter.post("/send-otp", sendOTP)
-userRouter.post("/reset-password", changePassword)
+userRouter.put(
+    "/change-password",
+    verifyToken,
+    changePassword
+);
+userRouter.post(
+    "/reset-password",
+    resetPassword
+);
 userRouter.get("/profile", verifyToken, getProfile)
 userRouter.put("/profile", verifyToken, updateProfile)
 userRouter.get("/wishlist", verifyToken, getWishlist);

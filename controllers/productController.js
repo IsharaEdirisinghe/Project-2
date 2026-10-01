@@ -32,28 +32,15 @@ export async function getProducts(req, res) {
         // Search
         if (search) {
             query.$or = [
-                {
-                    name: {
-                        $regex: search,
-                        $options: "i"
-                    }
-                },
-                {
-                    brand: {
-                        $regex: search,
-                        $options: "i"
-                    }
-                },
-                {
-                    category: {
-                        $regex: search,
-                        $options: "i"
-                    }
-                }
-            ]
+                { name: { $regex: search, $options: "i" } },
+                { brand: { $regex: search, $options: "i" } },
+                { category: { $regex: search, $options: "i" } }
+            ];
         }
         if (sale === "true") {
-            query.discountPercentage = { $gt: 0 };
+            query.$expr = {
+                $gt: ["$labelledPrice", "$price"]
+            };
         }
         if (section && section !== "All") {
             query.section = section;
@@ -61,6 +48,9 @@ export async function getProducts(req, res) {
         // Category
         if (category && category !== "All") {
             query.category = category;
+        }
+        if (newArrival === "true") {
+            query.createdAt = { $exists: true };
         }
         // Color
         if (color && color !== "null") {

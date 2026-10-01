@@ -59,6 +59,7 @@ mongoose.connect(
 
 app.use("/api/products",productRouter);
 app.use("/api/users",userRouter);
+app.use("/api/users", userRouter);
 app.use("/api/orders",orderRouter);
 app.use("/api/dashboard",dashboardRouter);
 
