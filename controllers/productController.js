@@ -26,7 +26,7 @@ export async function getProducts(req, res) {
         let query = {};
 
         // User නම් Available products විතරයි
-        if (!isAdmin(req)) {
+        if (req.user?.role !== "admin") {
             query.isAvailable = true;
         }
         // Search
@@ -83,17 +83,6 @@ export async function getProducts(req, res) {
         }
         let sortQuery = { createdAt: -1 };
 
-        if (sort === "priceAsc") {
-            sortQuery = { price: 1 };
-        }
-
-        if (sort === "priceDesc") {
-            sortQuery = { price: -1 };
-        }
-
-        if (sort === "bestSelling") {
-            sortQuery = { totalSold: -1 };
-        }
         switch (sort) {
 
             case "priceAsc":
@@ -122,25 +111,23 @@ export async function getProducts(req, res) {
         }
 
         // Pagination
-        const pageNumber = Number(page);
-        const limitNumber = Number(limit);
+        const pageNumber = Math.max(1, Number(page) || 1);
+        const limitNumber = Math.max(1, Number(limit) || 10);
         const skip = (pageNumber - 1) * limitNumber;
-        // Total Products
+
         const totalProducts = await Product.countDocuments(query);
-        // Products
+
         const products = await Product.find(query)
+            .sort(sortQuery)
             .skip(skip)
-            .limit(limitNumber)
-            .sort(sortQuery);
+            .limit(limitNumber);
 
         res.status(200).json({
-
             products,
             currentPage: pageNumber,
             totalPages: Math.ceil(totalProducts / limitNumber),
             totalProducts,
             hasMore: skip + products.length < totalProducts
-
         });
 
     } catch (err) {
@@ -474,6 +461,88 @@ export async function reduceStock(req, res) {
 
     }
 
+}
+
+export async function getHomeReviews(req, res) {
+    try {
+        const reviews = await Product.aggregate([
+            {
+                $unwind: "$reviews"
+            },
+            {
+                $sort: {
+                    "reviews.createdAt": -1
+                }
+            },
+            {
+                $limit: 6
+            },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "reviews.user",
+                    foreignField: "_id",
+                    as: "reviewUser"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$reviewUser",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+
+                    productId: 1,
+                    productName: "$name",
+
+                    productImage: {
+                        $arrayElemAt: ["$images", 0]
+                    },
+
+                    rating: "$reviews.rating",
+                    comment: "$reviews.comment",
+                    createdAt: "$reviews.createdAt",
+
+                    userName: {
+                        $trim: {
+                            input: {
+                                $concat: [
+                                    {
+                                        $ifNull: [
+                                            "$reviewUser.firstName",
+                                            ""
+                                        ]
+                                    },
+                                    " ",
+                                    {
+                                        $ifNull: [
+                                            "$reviewUser.lastName",
+                                            ""
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+
+        res.status(200).json({
+            reviews
+        });
+
+    } catch (err) {
+        console.error("Get home reviews error:", err);
+
+        res.status(500).json({
+            message: "Failed to load customer reviews",
+            error: err.message
+        });
+    }
 }
 
 export async function addRecentlyViewed(req, res) {

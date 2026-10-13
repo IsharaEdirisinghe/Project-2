@@ -15,7 +15,8 @@ import {
     getRecentlyViewed,
     getRecommendedProducts,
     addReview,
-    getProductReviews
+    getProductReviews,
+    getHomeReviews
 } from "../controllers/productController.js";
 
 const productRouter = express.Router();
@@ -29,6 +30,7 @@ productRouter.post(
 );
 productRouter.get("/recommended", getRecommendedProducts);
 productRouter.get("/search/:query", searchProducts);
+productRouter.get("/reviews/home", getHomeReviews);
 productRouter.post("/:productId/reviews",verifyToken,addReview);
 productRouter.get("/:productId/reviews",getProductReviews);
 productRouter.get("/:productId", getProductById);

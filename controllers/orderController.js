@@ -383,15 +383,21 @@ export async function updateOrderStatus(req, res) {
 
 export async function getOrderHistory(req, res) {
     try {
+        console.log("Logged user email:", req.user.email);
+
         const orders = await Order.find({
             email: req.user.email
         }).sort({
             date: -1
         });
 
+        console.log("My orders:", orders);
+
         res.json(orders);
 
     } catch (err) {
+        console.log("Get order history error:", err);
+
         res.status(500).json({
             message: err.message
         });

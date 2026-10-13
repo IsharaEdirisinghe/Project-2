@@ -602,6 +602,17 @@ export async function addToWishlist(req, res) {
     try {
         const productId = req.params.productId;
 
+        // Find product using custom productId
+        const product = await Product.findOne({
+            productId: productId
+        });
+
+        if (!product) {
+            return res.status(404).json({
+                message: "Product not found"
+            });
+        }
+
         const user = await User.findOne({
             email: req.user.email
         });
@@ -613,13 +624,18 @@ export async function addToWishlist(req, res) {
         }
 
         // Check whether product is already in wishlist
-        if (user.wishlist.includes(productId)) {
+        const alreadyExists = user.wishlist.some(
+            (item) => item.toString() === product._id.toString()
+        );
+
+        if (alreadyExists) {
             return res.status(400).json({
                 message: "Product already in wishlist"
             });
         }
 
-        user.wishlist.push(productId);
+        // Add MongoDB ObjectId to wishlist
+        user.wishlist.push(product._id);
 
         await user.save();
 
@@ -631,6 +647,7 @@ export async function addToWishlist(req, res) {
     } catch (err) {
 
         console.error("Add wishlist error:", err);
+
         res.status(500).json({
             message: err.message
         });
@@ -642,6 +659,17 @@ export async function removeFromWishlist(req, res) {
     try {
         const productId = req.params.productId;
 
+        // Find product using custom productId
+        const product = await Product.findOne({
+            productId: productId
+        });
+
+        if (!product) {
+            return res.status(404).json({
+                message: "Product not found"
+            });
+        }
+
         const user = await User.findOne({
             email: req.user.email
         });
@@ -652,8 +680,9 @@ export async function removeFromWishlist(req, res) {
             });
         }
 
+        // Remove MongoDB ObjectId from wishlist
         user.wishlist = user.wishlist.filter(
-            id => id.toString() !== productId
+            id => id.toString() !== product._id.toString()
         );
 
         await user.save();
@@ -664,6 +693,8 @@ export async function removeFromWishlist(req, res) {
         });
 
     } catch (err) {
+        console.error("Remove wishlist error:", err);
+
         res.status(500).json({
             message: err.message
         });
